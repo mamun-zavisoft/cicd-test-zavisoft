@@ -28,13 +28,40 @@ jobs:
         mkdir -p database
         touch database/database.sqlite
 
-    - name: Configure Environment
+    - name: "⚙️ Configure Production Environment"
       run: |
-        echo "DB_CONNECTION=sqlite" >> .env
-        echo "DB_DATABASE=$(pwd)/database/database.sqlite" >> .env
-        echo "CACHE_STORE=file" >> .env
-        echo "SESSION_DRIVER=file" >> .env
-        echo "QUEUE_CONNECTION=sync" >> .env
+          cd $RELEASE_DIR
+
+          # Create .env from example
+          cp .env.example .env
+
+          # ✅ CRITICAL: Force MySQL as the database driver
+          sed -i 's/DB_CONNECTION=.*/DB_CONNECTION=mysql/' .env
+
+          # Application settings
+          sed -i 's/APP_ENV=.*/APP_ENV=production/' .env
+          sed -i 's/APP_DEBUG=.*/APP_DEBUG=false/' .env
+          sed -i 's|APP_URL=.*|APP_URL=${{ secrets.APP_URL }}|' .env
+          sed -i 's/APP_KEY=.*/APP_KEY=${{ secrets.APP_KEY }}/' .env
+
+          # Database configuration
+          sed -i 's/DB_HOST=.*/DB_HOST=${{ secrets.DB_HOST }}/' .env
+          sed -i 's/DB_PORT=.*/DB_PORT=3306/' .env
+          sed -i 's/DB_DATABASE=.*/DB_DATABASE=${{ secrets.DB_DATABASE }}/' .env
+          sed -i 's/DB_USERNAME=.*/DB_USERNAME=${{ secrets.DB_USERNAME }}/' .env
+          sed -i 's/DB_PASSWORD=.*/DB_PASSWORD=${{ secrets.DB_PASSWORD }}/' .env
+
+          # Cache, session and queue drivers
+          sed -i 's/CACHE_DRIVER=.*/CACHE_DRIVER=redis/' .env
+          sed -i 's/SESSION_DRIVER=.*/SESSION_DRIVER=redis/' .env
+          sed -i 's/QUEUE_CONNECTION=.*/QUEUE_CONNECTION=redis/' .env
+
+          # ✅ Verify the final .env (for debugging)
+          echo "--- Verifying .env DB settings ---"
+          grep "^DB_" .env
+          echo "----------------------------------"
+
+          echo "✅ Environment configured for production"
 
     - name: Install Dependencies
       run: composer install --no-interaction --prefer-dist
