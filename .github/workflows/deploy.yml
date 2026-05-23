@@ -64,92 +64,92 @@ jobs:
         name: laravel-test-results
         path: test-results.txt
 
-  deploy:
-    name: Deploy Laravel App
-    runs-on: [self-hosted, linux, ec2, laravel]
+    deploy:
+      name: Deploy Laravel App
+      runs-on: [self-hosted]
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      steps:
+        - name: Checkout Repository
+          uses: actions/checkout@v4
 
-      - name: Set Variables
-        run: |
-          echo "APP_DIR=/var/www/auto-clinic" >> $GITHUB_ENV
-          echo "REPO_URL=https://github.com/mamun-zavisoft/cicd-test-zavisoft.git" >> $GITHUB_ENV
-          echo "BRANCH=main" >> $GITHUB_ENV
+        - name: Set Variables
+          run: |
+            echo "APP_DIR=/var/www/auto-clinic" >> $GITHUB_ENV
+            echo "REPO_URL=https://github.com/mamun-zavisoft/cicd-test-zavisoft.git" >> $GITHUB_ENV
+            echo "BRANCH=main" >> $GITHUB_ENV
 
-      - name: Install Required PHP Extensions
-        run: |
-          sudo yum install -y php php-cli php-mysqlnd php-pdo php-mbstring php-xml php-bcmath php-gd php-curl php-zip php-sqlite3 unzip git
+        - name: Install Required PHP Extensions
+          run: |
+            sudo yum install -y php php-cli php-mysqlnd php-pdo php-mbstring php-xml php-bcmath php-gd php-curl php-zip php-sqlite3 unzip git
 
-      - name: Prepare Deployment Directory
-        run: |
-          sudo mkdir -p $APP_DIR
-          sudo chown -R $USER:$USER $APP_DIR
+        - name: Prepare Deployment Directory
+          run: |
+            sudo mkdir -p $APP_DIR
+            sudo chown -R $USER:$USER $APP_DIR
 
-      - name: Clone or Pull Latest Code
-        run: |
-          if [ ! -d "$APP_DIR/.git" ]; then
-            rm -rf $APP_DIR/*
-            git clone -b $BRANCH $REPO_URL $APP_DIR
-          else
+        - name: Clone or Pull Latest Code
+          run: |
+            if [ ! -d "$APP_DIR/.git" ]; then
+              rm -rf $APP_DIR/*
+              git clone -b $BRANCH $REPO_URL $APP_DIR
+            else
+              cd $APP_DIR
+              git reset --hard
+              git clean -fd
+              git pull origin $BRANCH
+            fi
+
+        - name: Install Composer Dependencies
+          run: |
             cd $APP_DIR
-            git reset --hard
-            git clean -fd
-            git pull origin $BRANCH
-          fi
+            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 
-      - name: Install Composer Dependencies
-        run: |
-          cd $APP_DIR
-          composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+        - name: Setup Laravel Environment
+          run: |
+            cd $APP_DIR
 
-      - name: Setup Laravel Environment
-        run: |
-          cd $APP_DIR
+            if [ ! -f .env ]; then
+              cp .env.example .env
+            fi
 
-          if [ ! -f .env ]; then
-            cp .env.example .env
-          fi
+            php artisan key:generate --force
 
-          php artisan key:generate --force
+        - name: Set Folder Permissions
+          run: |
+            cd $APP_DIR
 
-      - name: Set Folder Permissions
-        run: |
-          cd $APP_DIR
+            sudo chown -R nginx:nginx storage bootstrap/cache || true
+            sudo chmod -R 775 storage bootstrap/cache
 
-          sudo chown -R nginx:nginx storage bootstrap/cache || true
-          sudo chmod -R 775 storage bootstrap/cache
+        - name: Clear Old Cache
+          run: |
+            cd $APP_DIR
 
-      - name: Clear Old Cache
-        run: |
-          cd $APP_DIR
+            php artisan optimize:clear || true
+            php artisan config:clear || true
+            php artisan cache:clear || true
+            php artisan route:clear || true
+            php artisan view:clear || true
 
-          php artisan optimize:clear || true
-          php artisan config:clear || true
-          php artisan cache:clear || true
-          php artisan route:clear || true
-          php artisan view:clear || true
+        - name: Run Database Migration
+          run: |
+            cd $APP_DIR
 
-      - name: Run Database Migration
-        run: |
-          cd $APP_DIR
+            php artisan migrate --force
 
-          php artisan migrate --force
+        - name: Cache Laravel Config
+          run: |
+            cd $APP_DIR
 
-      - name: Cache Laravel Config
-        run: |
-          cd $APP_DIR
+            php artisan config:cache
+            php artisan route:cache || true
+            php artisan view:cache || true
 
-          php artisan config:cache
-          php artisan route:cache || true
-          php artisan view:cache || true
+        - name: Restart Services
+          run: |
+            sudo systemctl restart nginx || true
+            sudo systemctl restart php-fpm || true
 
-      - name: Restart Services
-        run: |
-          sudo systemctl restart nginx || true
-          sudo systemctl restart php-fpm || true
-
-      - name: Deployment Success
-        run: |
-          echo "Laravel application deployed successfully 🚀"
+        - name: Deployment Success
+          run: |
+            echo "Laravel application deployed successfully 🚀"
