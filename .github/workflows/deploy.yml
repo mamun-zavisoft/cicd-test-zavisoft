@@ -100,7 +100,27 @@ jobs:
             composer install --no-interaction --prefer-dist --optimize-autoloader
 
             echo "Setting up environment..."
-            cp -n .env.example .env || true
+
+            if [ ! -f .env ]; then
+                cp .env.example .env
+            fi
+
+            # Force MySQL configuration
+            sed -i 's/DB_CONNECTION=sqlite/DB_CONNECTION=mysql/g' .env
+
+            # Add your production database credentials
+            sed -i 's/DB_HOST=.*/DB_HOST=127.0.0.1/g' .env
+            sed -i 's/DB_PORT=.*/DB_PORT=3306/g' .env
+            sed -i 's/DB_DATABASE=.*/DB_DATABASE=your_database_name/g' .env
+            sed -i 's/DB_USERNAME=.*/DB_USERNAME=your_database_user/g' .env
+            sed -i 's/DB_PASSWORD=.*/DB_PASSWORD=your_database_password/g' .env
+
+            php artisan key:generate --force
+
+            # Clear old cached configs
+            php artisan config:clear
+            php artisan cache:clear
+            php artisan optimize:clear
 
             php artisan key:generate || true
 
