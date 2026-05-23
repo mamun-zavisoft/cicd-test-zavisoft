@@ -20,9 +20,6 @@ jobs:
         php-version: 8.2
         extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath
 
-    - name: Copy .env
-      run: cp .env.example .env
-
     - name: Create SQLite Database
       run: |
         mkdir -p database
@@ -32,7 +29,6 @@ jobs:
       run: |
         cp .env.example .env
         sed -i 's/DB_CONNECTION=sqlite/DB_CONNECTION=mysql/g' .env
-
 
     - name: Configure Environment
       run: |
