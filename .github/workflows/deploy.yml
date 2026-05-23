@@ -65,91 +65,45 @@ jobs:
         path: test-results.txt
 
   deploy:
-    - name: Deploy Laravel App
-      runs-on: [self-hosted]
+    needs: test
 
-        steps:
-          - name: Checkout Repository
-            uses: actions/checkout@v4
+    runs-on:
+      - self-hosted
 
-          - name: Set Variables
-            run: |
-              echo "APP_DIR=/var/www/auto-clinic" >> $GITHUB_ENV
-              echo "REPO_URL=https://github.com/mamun-zavisoft/cicd-test-zavisoft.git" >> $GITHUB_ENV
-              echo "BRANCH=main" >> $GITHUB_ENV
+    steps:
+      - name: Deploy Application
+        run: |
+            set -e
 
-          - name: Install Required PHP Extensions
-            run: |
-              sudo yum install -y php php-cli php-mysqlnd php-pdo php-mbstring php-xml php-bcmath php-gd php-curl php-zip php-sqlite3 unzip git
+            APP_DIR="/var/www/auto-clinic"
 
-          - name: Prepare Deployment Directory
-            run: |
-              sudo mkdir -p $APP_DIR
-              sudo chown -R $USER:$USER $APP_DIR
+            echo "Resetting deployment directory..."
 
-          - name: Clone or Pull Latest Code
-            run: |
-              if [ ! -d "$APP_DIR/.git" ]; then
-                rm -rf $APP_DIR/*
-                git clone -b $BRANCH $REPO_URL $APP_DIR
-              else
-                cd $APP_DIR
-                git reset --hard
-                git clean -fd
-                git pull origin $BRANCH
-              fi
+            sudo rm -rf "$APP_DIR"
+            sudo mkdir -p "$APP_DIR"
+            sudo chown -R $USER:$USER "$APP_DIR"
 
-          - name: Install Composer Dependencies
-            run: |
-              cd $APP_DIR
-              composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+            echo "Cloning repository..."
+            git clone https://github.com/mamun-zavisoft/cicd-test-zavisoft.git "$APP_DIR"
 
-          - name: Setup Laravel Environment
-            run: |
-              cd $APP_DIR
+            cd "$APP_DIR"
 
-              if [ ! -f .env ]; then
-                cp .env.example .env
-              fi
+            echo "Installing dependencies..."
+            composer install --no-interaction --prefer-dist --optimize-autoloader
 
-              php artisan key:generate --force
+            echo "Setting up environment..."
+            cp -n .env.example .env || true
 
-          - name: Set Folder Permissions
-            run: |
-              cd $APP_DIR
+            php artisan key:generate || true
 
-              sudo chown -R nginx:nginx storage bootstrap/cache || true
-              sudo chmod -R 775 storage bootstrap/cache
+            echo "Fixing permissions..."
+            chmod -R 775 storage bootstrap/cache
 
-          - name: Clear Old Cache
-            run: |
-              cd $APP_DIR
+            echo "Running migrations..."
+            php artisan migrate --force
 
-              php artisan optimize:clear || true
-              php artisan config:clear || true
-              php artisan cache:clear || true
-              php artisan route:clear || true
-              php artisan view:clear || true
+            echo "Optimizing Laravel..."
+            php artisan optimize:clear
+            php artisan optimize
 
-          - name: Run Database Migration
-            run: |
-              cd $APP_DIR
-
-              php artisan migrate --force
-
-          - name: Cache Laravel Config
-            run: |
-              cd $APP_DIR
-
-              php artisan config:cache
-              php artisan route:cache || true
-              php artisan view:cache || true
-
-          - name: Restart Services
-            run: |
-              sudo systemctl restart nginx || true
-              sudo systemctl restart php-fpm || true
-
-          - name: Deployment Success
-            run: |
-              echo "Laravel application deployed successfully 🚀"
+            echo "Deployment Successful 🚀"
