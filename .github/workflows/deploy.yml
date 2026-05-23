@@ -64,7 +64,7 @@ jobs:
         name: laravel-test-results
         path: test-results.txt
 
-deploy:
+  deploy:
     needs: test
 
     runs-on:
