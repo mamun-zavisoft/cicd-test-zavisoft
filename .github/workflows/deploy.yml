@@ -64,9 +64,9 @@ jobs:
         name: laravel-test-results
         path: test-results.txt
 
-    deploy:
-      name: Deploy Laravel App
-      runs-on: [self-hosted]
+  deploy:
+  - name: Deploy Laravel App
+    runs-on: [self-hosted]
 
       steps:
         - name: Checkout Repository
