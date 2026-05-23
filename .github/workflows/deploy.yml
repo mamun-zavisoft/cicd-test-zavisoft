@@ -64,159 +64,46 @@ jobs:
         name: laravel-test-results
         path: test-results.txt
 
-# ============================================================
-  # JOB 2: DEPLOY
-  # ============================================================
-  deploy:
-    name: "🚀 Deploy to EC2"
-    runs-on: [self-hosted, zavisoft, production]
+deploy:
     needs: test
 
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    environment:
-      name: production
-      url: http://YOUR_EC2_IP
+    runs-on:
+      - self-hosted
 
     steps:
-      - name: "📥 Checkout Repository"
-        uses: actions/checkout@v4
-        with:
-          clean: true
-
-      - name: "📥 Download Test Results Artifact"
-        uses: actions/download-artifact@v4
-        with:
-          name: test-results-${{ github.run_id }}-${{ github.run_attempt }}
-          path: /tmp/test-results/
-
-      - name: "📋 Display Test Results Artifact"
+      - name: Deploy Application
         run: |
-          echo "============================================"
-          echo " DOWNLOADED ARTIFACT CONTENTS"
-          echo "============================================"
-          ls -la /tmp/test-results/
-          echo ""
-          echo "--- Test Summary ---"
-          cat /tmp/test-results/test-summary.txt || echo "Summary file not found"
-          echo ""
-          echo "--- Test Output ---"
-          cat /tmp/test-results/test-output.txt || echo "Output file not found"
-          echo "============================================"
+            set -e
 
-      - name: "🔧 Prepare Deployment Environment"
-        run: |
-          mkdir -p /var/www/auto-clinic/releases
-          mkdir -p /var/www/auto-clinic/shared/storage/app/public
-          mkdir -p /var/www/auto-clinic/shared/storage/framework/{sessions,views,cache}
-          mkdir -p /var/www/auto-clinic/shared/storage/logs
-          mkdir -p /var/www/auto-clinic/shared/bootstrap/cache
-          echo "Release : ${{ github.sha }}"
-          echo "Branch  : ${{ github.ref_name }}"
-          echo "Actor   : ${{ github.actor }}"
+            APP_DIR="/var/www/auto-clinic"
 
-      - name: "📁 Create Release Directory"
-        run: |
-          RELEASE_DIR="/var/www/auto-clinic/releases/$(date '+%Y%m%d%H%M%S')-${{ github.sha }}"
-          echo "RELEASE_DIR=$RELEASE_DIR" >> $GITHUB_ENV
-          mkdir -p $RELEASE_DIR
-          cp -r $GITHUB_WORKSPACE/. $RELEASE_DIR/
-          echo "Release directory created: $RELEASE_DIR"
-          ls -la $RELEASE_DIR
+            echo "Resetting deployment directory..."
 
-      - name: "📦 Install Composer Dependencies (Production)"
-        run: |
-          cd $RELEASE_DIR
-          composer install \
-            --no-interaction \
-            --no-dev \
-            --prefer-dist \
-            --optimize-autoloader \
-            --no-scripts
+            sudo rm -rf "$APP_DIR"
+            sudo mkdir -p "$APP_DIR"
+            sudo chown -R $USER:$USER "$APP_DIR"
 
-      - name: "⚙️ Configure Production Environment"
-        run: |
-          cd $RELEASE_DIR
-          cp .env.example .env
+            echo "Cloning repository..."
+            git clone https://github.com/mamun-zavisoft/cicd-test-zavisoft.git "$APP_DIR"
 
-          sed -i 's/APP_ENV=.*/APP_ENV=production/' .env
-          sed -i 's/APP_DEBUG=.*/APP_DEBUG=false/' .env
-          sed -i 's|APP_URL=.*|APP_URL=${{ secrets.APP_URL }}|' .env
-          sed -i 's/APP_KEY=.*/APP_KEY=${{ secrets.APP_KEY }}/' .env
-          sed -i 's/DB_HOST=.*/DB_HOST=${{ secrets.DB_HOST }}/' .env
-          sed -i 's/DB_DATABASE=.*/DB_DATABASE=${{ secrets.DB_DATABASE }}/' .env
-          sed -i 's/DB_USERNAME=.*/DB_USERNAME=${{ secrets.DB_USERNAME }}/' .env
-          sed -i 's/DB_PASSWORD=.*/DB_PASSWORD=${{ secrets.DB_PASSWORD }}/' .env
-          sed -i 's/CACHE_DRIVER=.*/CACHE_DRIVER=redis/' .env
-          sed -i 's/SESSION_DRIVER=.*/SESSION_DRIVER=redis/' .env
-          sed -i 's/QUEUE_CONNECTION=.*/QUEUE_CONNECTION=redis/' .env
+            cd "$APP_DIR"
 
-      - name: "🔗 Link Shared Storage"
-        run: |
-          rm -rf $RELEASE_DIR/storage
-          ln -nfs /var/www/auto-clinic/shared/storage $RELEASE_DIR/storage
-          rm -rf $RELEASE_DIR/bootstrap/cache
-          ln -nfs /var/www/auto-clinic/shared/bootstrap/cache $RELEASE_DIR/bootstrap/cache
+            echo "Installing dependencies..."
+            composer install --no-interaction --prefer-dist --optimize-autoloader
 
-      - name: "🎯 Run Laravel Artisan Commands"
-        run: |
-          cd $RELEASE_DIR
-          php artisan migrate --force --no-interaction
-          php artisan config:cache
-          php artisan route:cache
-          php artisan view:cache
-          php artisan event:cache
-          php artisan storage:link --force
+            echo "Setting up environment..."
+            cp -n .env.example .env || true
 
-      - name: "🔐 Set File Permissions"
-        run: |
-          sudo chown -R ubuntu:www-data $RELEASE_DIR
-          find $RELEASE_DIR -type d -exec chmod 755 {} \;
-          find $RELEASE_DIR -type f -exec chmod 644 {} \;
-          chmod -R 775 /var/www/auto-clinic/shared/storage
-          chmod -R 775 /var/www/auto-clinic/shared/bootstrap/cache
+            php artisan key:generate || true
 
-      - name: "⚡ Activate Release (Zero-Downtime Switch)"
-        run: |
-          ln -nfs $RELEASE_DIR /var/www/auto-clinic/current
-          echo "✅ Activated: /var/www/auto-clinic/current → $RELEASE_DIR"
+            echo "Fixing permissions..."
+            chmod -R 775 storage bootstrap/cache
 
-      - name: "🔄 Reload Services"
-        run: |
-          sudo systemctl reload php8.2-fpm
-          sudo systemctl reload nginx
-          sudo systemctl restart supervisor 2>/dev/null || true
-          sudo supervisorctl restart all 2>/dev/null || true
+            echo "Running migrations..."
+            php artisan migrate --force || true
 
-      - name: "🧹 Cleanup Old Releases"
-        run: |
-          cd /var/www/auto-clinic/releases
-          ls -t | tail -n +6 | xargs -I {} rm -rf {}
-          echo "Remaining releases:"
-          ls -la /var/www/auto-clinic/releases/
+            echo "Optimizing Laravel..."
+            php artisan optimize:clear
+            php artisan optimize
 
-      - name: "❤️ Deployment Health Check"
-        run: |
-          sleep 5
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ || echo "000")
-          echo "HTTP Status: $HTTP_STATUS"
-
-          if [[ "$HTTP_STATUS" == "200" || "$HTTP_STATUS" == "302" || "$HTTP_STATUS" == "301" ]]; then
-            echo "✅ Health check PASSED — Application is live!"
-          else
-            echo "⚠️ Health check returned: $HTTP_STATUS"
-          fi
-
-          cd /var/www/auto-clinic/current
-          php artisan --version
-
-          echo "============================================"
-          echo " DEPLOYMENT COMPLETE"
-          echo "============================================"
-          echo " Repository : ${{ github.repository }}"
-          echo " Branch     : ${{ github.ref_name }}"
-          echo " Commit     : ${{ github.sha }}"
-          echo " Deployed by: ${{ github.actor }}"
-          echo " Timestamp  : $(date '+%Y-%m-%d %H:%M:%S UTC')"
-          echo " Release Dir: $RELEASE_DIR"
-          echo "============================================"
+            echo "Deployment Successful 🚀"
