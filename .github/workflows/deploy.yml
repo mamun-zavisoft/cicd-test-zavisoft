@@ -31,11 +31,12 @@ jobs:
           MYSQL_PASSWORD: test_password
         ports:
           - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_password --silent"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
+
+        - name: "🧹 Clear Laravel Cache"
+          run: |
+            php artisan config:clear
+            php artisan cache:clear
+            php artisan config:cache || true
 
     steps:
       - name: "📥 Checkout Code"
@@ -67,26 +68,6 @@ jobs:
           npm ci
           npm run build
 
-      - name: "⚙️ Setup Laravel ENV"
-        run: |
-          cp .env.example .env
-
-          sed -i 's/DB_CONNECTION=.*/DB_CONNECTION=mysql/' .env
-          sed -i 's/DB_HOST=.*/DB_HOST=127.0.0.1/' .env
-          sed -i 's/DB_DATABASE=.*/DB_DATABASE=auto_clinic_test/' .env
-          sed -i 's/DB_USERNAME=.*/DB_USERNAME=test_user/' .env
-          sed -i 's/DB_PASSWORD=.*/DB_PASSWORD=test_password/' .env
-          sed -i 's/DB_PORT=.*/DB_PORT=3306/' .env
-
-          php artisan key:generate --force
-
-          php artisan config:clear
-          php artisan cache:clear
-
-          mkdir -p storage/logs storage/framework/{sessions,views,cache}
-          mkdir -p bootstrap/cache
-          touch storage/logs/laravel.log
-
       - name: "⏳ Wait for MySQL"
         run: |
           until mysqladmin ping -h 127.0.0.1 -u root -proot_password --silent; do
@@ -113,6 +94,14 @@ jobs:
             2>&1 | tee storage/test-results/output.txt
 
           exit ${PIPESTATUS[0]}
+         env:
+           DB_CONNECTION: mysql
+           DB_HOST: 127.0.0.1
+           DB_PORT: 3306
+           DB_DATABASE: auto_clinic_test
+           DB_USERNAME: test_user
+           DB_PASSWORD: test_password
+           APP_ENV: testing
 
       - name: "📤 Upload Test Artifact"
         if: always()
