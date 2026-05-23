@@ -167,6 +167,23 @@ jobs:
           DB_USERNAME: test_user
           DB_PASSWORD: test_password
 
+
+      # ------------------------------------------------
+      # Step 7.1: SQLite in memory update
+      # ------------------------------------------------
+      - name: "🐘 Setup PHP ${{ env.PHP_VERSION }}"
+        uses: shivammathur/setup-php@v2
+          with:
+            php-version: ${{ env.PHP_VERSION }}
+            extensions: >-
+            mbstring, xml, ctype, iconv, intl, pdo,
+            pdo_mysql, pdo_sqlite, sqlite3,    # ← Add these
+            dom, filter, gd, json, zip,
+            bcmath, tokenizer, fileinfo, openssl, curl
+           coverage: xdebug
+           tools: composer:v2
+
+
       # ----------------------------------------------------------
       # Step 8: Generate Test Summary Report
       # ----------------------------------------------------------
